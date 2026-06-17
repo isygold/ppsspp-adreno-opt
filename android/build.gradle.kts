@@ -278,8 +278,26 @@ android {
 }
 tasks.register("androidGitVersion") {
 	doLast {
-		println("androidGitVersion.name\t$gitVersionName")
-		println("androidGitVersion.code\t$gitVersionCode")
+		try {
+			fun gitOut(vararg args: String): String =
+				providers.exec {
+					commandLine("git", *args)
+					isIgnoreExitValue = true
+				}.standardOutput.asText.get().trim()
+
+			val tag = gitOut("describe", "--tags", "--match", "v*", "--abbrev=0").ifEmpty { "v0.0.0" }
+			val commitsSince = gitOut("rev-list", "$tag..HEAD", "--count").toIntOrNull() ?: 0
+			val branch = gitOut("rev-parse", "--abbrev-ref", "HEAD").replace("/", "-")
+			val dirty = gitOut("status", "--porcelain").lineSequence().any { it.isNotBlank() && !it.startsWith("??") }
+			val name = if (commitsSince == 0) tag else "$tag-$commitsSince-$branch${if (dirty) "-dirty" else ""}"
+			val parts = tag.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+			val code = parts.getOrElse(0) { 0 } * 100_000_000 + parts.getOrElse(1) { 0 } * 1000_000 + parts.getOrElse(2) { 0 } * 10_000 + commitsSince
+			println("androidGitVersion.name\t$name")
+			println("androidGitVersion.code\t$code")
+		} catch (e: Exception) {
+			println("androidGitVersion.name\tunknown")
+			println("androidGitVersion.code\t0")
+		}
 	}
 }
 
