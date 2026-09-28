@@ -1415,6 +1415,7 @@ void GameSettingsScreen::CreateSystemSettings(UI::ViewGroup *systemSettings) {
 		}
 	});
 	systemSettings->Add(new CheckBox(&g_Config.bScreenshotsAsPNG, sy->T("Screenshots as PNG")));
+	systemSettings->Add(new CheckBox(&g_Config.bBigPictureMode, sy->T("BigPictureMode", "Big Picture Mode (fullscreen game launcher)")));
 	static const char *screenshotModeChoices[] = { "Final processed image", "Raw game image" };
 	systemSettings->Add(new PopupMultiChoice(&g_Config.iScreenshotMode, sy->T("Screenshot mode"), screenshotModeChoices, 0, ARRAY_SIZE(screenshotModeChoices), I18NCat::SYSTEM, screenManager()));
 	// TODO: Make this setting available on Mac too.

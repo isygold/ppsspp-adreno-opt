@@ -216,6 +216,7 @@ public:
 	bool bFastMemory;
 	int iCpuCore;
 	bool bCheckForNewVersion;
+	bool bBigPictureMode;
 	bool bForceLagSync;
 	bool bFuncReplacements;
 	bool bHideSlowWarnings;
