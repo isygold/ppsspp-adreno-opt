@@ -51,11 +51,16 @@ val gitVersionName = if (commitsSinceTag == 0) gitTag else buildString {
 	if (isDirty) append("-dirty")
 }
 
-val gitVersionCode =
+val gitVersionCode = if (gitTag == "v0.0.0") {
+	// No reachable version tag (e.g. rewritten fork history): use the commit count so
+	// versionCode stays positive and increases with every push.
+	providers.git("rev-list", "HEAD", "--count").toIntOrNull()?.coerceAtLeast(1) ?: 1
+} else {
 	major * 100_000_000 +
 		minor * 1000_000 +
 		patch * 10_000 +
 		commitsSinceTag
+}
 
 dependencies {
 	// 1.6.1 is the newest version we can use that won't complain about minSdk version,
@@ -291,7 +296,11 @@ tasks.register("androidGitVersion") {
 			val dirty = gitOut("status", "--porcelain").lineSequence().any { it.isNotBlank() && !it.startsWith("??") }
 			val name = if (commitsSince == 0) tag else "$tag-$commitsSince-$branch${if (dirty) "-dirty" else ""}"
 			val parts = tag.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
-			val code = parts.getOrElse(0) { 0 } * 100_000_000 + parts.getOrElse(1) { 0 } * 1000_000 + parts.getOrElse(2) { 0 } * 10_000 + commitsSince
+			val code = if (tag == "v0.0.0") {
+				gitOut("rev-list", "HEAD", "--count").toIntOrNull()?.coerceAtLeast(1) ?: 1
+			} else {
+				parts.getOrElse(0) { 0 } * 100_000_000 + parts.getOrElse(1) { 0 } * 1000_000 + parts.getOrElse(2) { 0 } * 10_000 + commitsSince
+			}
 			println("androidGitVersion.name\t$name")
 			println("androidGitVersion.code\t$code")
 		} catch (e: Exception) {
