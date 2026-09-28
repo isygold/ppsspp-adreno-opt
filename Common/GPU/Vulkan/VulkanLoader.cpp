@@ -253,7 +253,6 @@ PFN_vkCmdSetStencilTestEnable vkCmdSetStencilTestEnable;
 PFN_vkCmdSetStencilOp vkCmdSetStencilOp;
 
 // VK_EXT_extended_dynamic_state3 (still an EXT extension)
-PFN_vkCmdSetColorWriteEnableEXT vkCmdSetColorWriteEnableEXT;
 PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
 PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
 PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
@@ -927,7 +926,6 @@ void VulkanLoadDeviceFunctions(VkDevice device, const VulkanExtensions &enabledE
 		LOAD_DEVICE_FUNC_CORE(device, vkCmdSetStencilOp, vkCmdSetStencilOpEXT, VK_API_VERSION_1_3);
 	}
 	if (enabledExtensions.EXT_extended_dynamic_state3) {
-		LOAD_DEVICE_FUNC(device, vkCmdSetColorWriteEnableEXT);
 		LOAD_DEVICE_FUNC(device, vkCmdSetColorBlendEnableEXT);
 		LOAD_DEVICE_FUNC(device, vkCmdSetColorBlendEquationEXT);
 		LOAD_DEVICE_FUNC(device, vkCmdSetColorWriteMaskEXT);

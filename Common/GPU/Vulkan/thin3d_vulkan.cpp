@@ -1036,25 +1036,13 @@ VKContext::VKContext(VulkanContext *vulkan, bool useRenderThread)
 		// Color write mask not masking write in certain scenarios with a depth test, see #10421.
 		// Known still present on driver 0x80180000 and Adreno 5xx (possibly more.)
 		// Known working on driver 0x801EA000 and Adreno 620.
-		// Adreno 7xx+ have not shown this bug.
-		if (deviceProps.deviceID >= 0x05000000 && deviceProps.deviceID < 0x06000000) {
-			// Adreno 5xx: all known driver versions exhibit this bug.
+		if (deviceProps.driverVersion < 0x801EA000 || deviceProps.deviceID < 0x06000000)
 			bugs_.Infest(Bugs::COLORWRITEMASK_BROKEN_WITH_DEPTHTEST);
-		} else if (deviceProps.deviceID >= 0x06000000 && deviceProps.deviceID < 0x07000000) {
-			// Adreno 6xx: only older driver versions.
-			if (deviceProps.driverVersion < 0x801EA000) {
-				bugs_.Infest(Bugs::COLORWRITEMASK_BROKEN_WITH_DEPTHTEST);
-			}
-		}
-		// Adreno 7xx+ (deviceID >= 0x07000000): NOT affected. Skip workaround.
 
 		// Trying to follow all the rules in https://registry.khronos.org/vulkan/specs/1.3/html/vkspec.html#synchronization-pipeline-barriers-subpass-self-dependencies
 		// and https://registry.khronos.org/vulkan/specs/1.3/html/vkspec.html#renderpass-feedbackloop, but still it doesn't
 		// quite work - artifacts on triangle boundaries on Adreno.
-		if (deviceProps.deviceID < 0x08000000) {
-			bugs_.Infest(Bugs::SUBPASS_FEEDBACK_BROKEN);
-		}
-		// Adreno 8xx+: may have fixed this. Leave uninfested.
+		bugs_.Infest(Bugs::SUBPASS_FEEDBACK_BROKEN);
 	} else if (caps_.vendor == GPUVendor::VENDOR_AMD) {
 		// See issue #10074, and also #10065 (AMD) and #10109 for the choice of the driver version to check for.
 		if (deviceProps.driverVersion < 0x00407000) {
@@ -1309,6 +1297,7 @@ Pipeline *VKContext::CreateGraphicsPipeline(const PipelineDesc &desc, const char
 		gDesc.dynamicStates[numDyn++] = VK_DYNAMIC_STATE_STENCIL_WRITE_MASK;
 	}
 
+#if !PPSSPP_PLATFORM(IOS_APP_STORE)
 	bool edsSupported = vulkan_->GetDeviceFeatures().enabled.extendedDynamicState.extendedDynamicState;
 	if (edsSupported) {
 		gDesc.dynamicStates[numDyn++] = VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT;
@@ -1322,11 +1311,11 @@ Pipeline *VKContext::CreateGraphicsPipeline(const PipelineDesc &desc, const char
 	const auto &eds3Feat = vulkan_->GetDeviceFeatures().enabled.extendedDynamicState3;
 	bool eds3Supported = eds3Feat.extendedDynamicState3ColorBlendEnable && eds3Feat.extendedDynamicState3ColorBlendEquation && eds3Feat.extendedDynamicState3ColorWriteMask;
 	if (eds3Supported) {
-		gDesc.dynamicStates[numDyn++] = VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT;
 		gDesc.dynamicStates[numDyn++] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
 		gDesc.dynamicStates[numDyn++] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
 		gDesc.dynamicStates[numDyn++] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
 	}
+#endif
 
 	gDesc.ds.dynamicStateCount = numDyn;
 	gDesc.ds.pDynamicStates = gDesc.dynamicStates;

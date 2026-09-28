@@ -256,7 +256,6 @@ extern PFN_vkCmdSetStencilTestEnable vkCmdSetStencilTestEnable;
 extern PFN_vkCmdSetStencilOp vkCmdSetStencilOp;
 
 // VK_EXT_extended_dynamic_state3 (still EXT)
-extern PFN_vkCmdSetColorWriteEnableEXT vkCmdSetColorWriteEnableEXT;
 extern PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
 extern PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
 extern PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
@@ -295,7 +294,6 @@ struct VulkanExtensions {
 
 	// Extended dynamic state reduces pipeline variants.
 	bool EXT_extended_dynamic_state;
-	bool EXT_extended_dynamic_state2;
 	bool EXT_extended_dynamic_state3;
 };
 

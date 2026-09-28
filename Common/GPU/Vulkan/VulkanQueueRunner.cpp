@@ -1070,6 +1070,7 @@ void VulkanQueueRunner::PerformRenderPass(const VKRStep &step, VkCommandBuffer c
 	int lastStencilWriteMask = -1;
 	int lastStencilCompareMask = -1;
 	int lastStencilReference = -1;
+#if !PPSSPP_PLATFORM(IOS_APP_STORE)
 	uint8_t lastStencilTestEnable = 0xFF;  // 0xFF = uninitialized
 	uint8_t lastDepthTestEnable = 0xFF;
 	uint8_t lastDepthWriteEnable = 0xFF;
@@ -1085,6 +1086,7 @@ void VulkanQueueRunner::PerformRenderPass(const VKRStep &step, VkCommandBuffer c
 	bool edsSupported = vulkan_->GetDeviceFeatures().enabled.extendedDynamicState.extendedDynamicState;
 	const auto &eds3 = vulkan_->GetDeviceFeatures().enabled.extendedDynamicState3;
 	bool eds3Supported = eds3.extendedDynamicState3ColorBlendEnable && eds3.extendedDynamicState3ColorBlendEquation && eds3.extendedDynamicState3ColorWriteMask;
+#endif
 
 	const RenderPassType rpType = step.render.renderPassType;
 
@@ -1144,6 +1146,7 @@ void VulkanQueueRunner::PerformRenderPass(const VKRStep &step, VkCommandBuffer c
 				lastStencilWriteMask = -1;
 				lastStencilCompareMask = -1;
 				lastStencilReference = -1;
+#if !PPSSPP_PLATFORM(IOS_APP_STORE)
 				lastStencilTestEnable = 0xFF;
 				lastDepthTestEnable = 0xFF;
 				lastDepthWriteEnable = 0xFF;
@@ -1214,6 +1217,7 @@ void VulkanQueueRunner::PerformRenderPass(const VKRStep &step, VkCommandBuffer c
 					};
 					vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &eq);
 				}
+#endif
 			}
 			break;
 		}

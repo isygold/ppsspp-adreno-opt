@@ -679,8 +679,6 @@ VkResult VulkanContext::CreateDevice(int physical_device) {
 
 	// VK_EXT_extended_dynamic_state — promoted to Vulkan 1.3 core.
 	extensionsLookup_.EXT_extended_dynamic_state = EnableDeviceExtension(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME, VK_API_VERSION_1_3);
-	// VK_EXT_extended_dynamic_state2 — promoted to Vulkan 1.3 core.
-	extensionsLookup_.EXT_extended_dynamic_state2 = EnableDeviceExtension(VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME, VK_API_VERSION_1_3);
 	// VK_EXT_extended_dynamic_state3 — still an extension as of Vulkan 1.3.
 	extensionsLookup_.EXT_extended_dynamic_state3 = EnableDeviceExtension(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, 0);
 
@@ -816,7 +814,6 @@ VkResult VulkanContext::CreateDevice(int physical_device) {
 		deviceFeatures_.enabled.extendedDynamicState3.extendedDynamicState3ColorBlendEnable = deviceFeatures_.available.extendedDynamicState3.extendedDynamicState3ColorBlendEnable;
 		deviceFeatures_.enabled.extendedDynamicState3.extendedDynamicState3ColorBlendEquation = deviceFeatures_.available.extendedDynamicState3.extendedDynamicState3ColorBlendEquation;
 		deviceFeatures_.enabled.extendedDynamicState3.extendedDynamicState3ColorWriteMask = deviceFeatures_.available.extendedDynamicState3.extendedDynamicState3ColorWriteMask;
-		deviceFeatures_.enabled.extendedDynamicState3.extendedDynamicState3ColorBlendAdvanced = deviceFeatures_.available.extendedDynamicState3.extendedDynamicState3ColorBlendAdvanced;
 	}
 
 	// deviceFeatures_.enabled.multiview.multiviewGeometryShader = deviceFeatures_.available.multiview.multiviewGeometryShader;
@@ -907,6 +904,10 @@ VkResult VulkanContext::CreateDevice(int physical_device) {
 
 	case VULKAN_VENDOR_QUALCOMM:
 	{
+#if PPSSPP_PLATFORM(WINDOWS)
+		// All the modern Qualcomm PC laptops are fast enough to be called FAST.
+		devicePerfClass_ = PerfClass::FAST;
+#else
 		// Classify Adreno by hardware generation using the deviceID range.
 		// deviceID encodes the GPU family: 0x05xxxxxx = 5xx, 0x06xxxxxx = 6xx, etc.
 		uint32_t adrenoFamily = props.deviceID >> 24;
@@ -917,6 +918,7 @@ VkResult VulkanContext::CreateDevice(int physical_device) {
 			// Adreno 5xx and below — legacy, likely slow.
 			devicePerfClass_ = PerfClass::SLOW;
 		}
+#endif
 		break;
 	}
 
