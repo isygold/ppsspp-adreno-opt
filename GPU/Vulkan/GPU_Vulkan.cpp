@@ -284,6 +284,8 @@ void GPU_Vulkan::EndHostFrame() {
 
 	drawEngine_.EndFrame();
 
+	PipelineLog::Frame(pipelineManager_->GetMeasurementStats(), g_paramSFO.GetValueString("TITLE"));
+
 	GPUCommonHW::EndHostFrame();
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 
 void TimeInit();
 
@@ -34,6 +35,9 @@ void sleep_random(double minSeconds, double maxSeconds, const char *reason);
 void yield();
 
 void GetCurrentTimeFormatted(char formattedTime[13]);
+
+// Return the current local time as Hours:Minutes:Seconds, e.g. "14:07:33".
+std::string GetCurrentTimeHHMMSS();
 
 // Most accurate timer possible - no extra double conversions. Only for spans.
 class Instant {

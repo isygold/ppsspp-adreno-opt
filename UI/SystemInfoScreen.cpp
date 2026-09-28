@@ -11,6 +11,7 @@
 #include "Common/CPUDetect.h"
 #include "Common/MemoryUtil.h"
 #include "Common/File/AndroidStorage.h"
+#include "Common/File/FileUtil.h"
 #include "Common/Audio/AudioBackend.h"
 #include "Common/Data/Text/I18n.h"
 #include "Common/Data/Text/StringWriter.h"
@@ -21,7 +22,9 @@
 #include "Common/UI/Notice.h"
 #include "Core/System.h"
 #include "Core/Config.h"
+#include "Core/ELF/ParamSFO.h"
 #include "GPU/GPUState.h"  // ugh
+#include "GPU/Vulkan/PipelineManagerVulkan.h"
 #include "UI/SystemInfoScreen.h"
 #include "UI/IconCache.h"
 #include "UI/BaseScreens.h"
@@ -29,9 +32,48 @@
 #include "UI/OnScreenDisplay.h"
 #include "android/jni/app-android.h"
 
+static std::string JoinLogEntries(const std::vector<std::string> &entries) {
+	std::string text;
+	for (const std::string &entry : entries) {
+		if (!text.empty())
+			text += "\n";
+		text += entry;
+	}
+	if (text.empty())
+		text = "(no entries yet - enable recording, play a while, then disable it)";
+	return text;
+}
+
 void SystemInfoScreen::update() {
 	UITabbedBaseDialogScreen::update();
 	g_OSD.NudgeIngameNotifications();
+
+	// Pipeline log: react to the record checkbox toggling, refresh the entry list.
+	const bool recording = *PipelineLog::RecordingFlag();
+	if (recording != pipelineLogWasRecording_) {
+		if (recording) {
+			std::string game = "(no game)";
+			if (PSP_IsInited()) {
+				game = g_paramSFO.GetValueString("TITLE");
+				if (game.empty())
+					game = g_paramSFO.GetDiscID();
+			}
+			if (game != "(no game)")
+				PipelineLog::SetLastGameTitle(game);
+			PipelineLog::ResetSession();
+			PipelineLog::AddEntry("=== recording started " + PipelineLog::GetCurrentStamp() + " | game: " + game + " ===");
+		} else {
+			SavePipelineLogEntries();
+		}
+		pipelineLogWasRecording_ = recording;
+	}
+	if (pipelineLogEntries_) {
+		const std::vector<std::string> entries = PipelineLog::Entries();
+		if ((int)entries.size() != pipelineLogEntriesShown_) {
+			pipelineLogEntriesShown_ = (int)entries.size();
+			pipelineLogEntries_->SetText(JoinLogEntries(entries));
+		}
+	}
 }
 
 // TODO: How can we de-duplicate this and SystemInfoScreen::CreateTabs?
@@ -78,6 +120,15 @@ void SystemInfoScreen::CreateTabs() {
 	auto si = GetI18NCategory(I18NCat::SYSINFO);
 	auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
 
+	// Don't treat an already-running recording as a fresh toggle.
+	if (!pipelineLogInit_) {
+		pipelineLogWasRecording_ = *PipelineLog::RecordingFlag();
+		pipelineLogInit_ = true;
+	}
+	// The views die on RecreateViews, so drop the stale pointer up front.
+	pipelineLogEntries_ = nullptr;
+	pipelineLogEntriesShown_ = 0;
+
 	AddTab("Device Info", si->T("Device Info"), [this](UI::LinearLayout *parent) {
 		CreateDeviceInfoTab(parent);
 	});
@@ -105,6 +156,94 @@ void SystemInfoScreen::CreateTabs() {
 	AddTab("DevSystemInfoDriverBugs", si->T("Driver bugs"), [this](UI::LinearLayout *parent) {
 		CreateDriverBugsTab(parent);
 	});
+	if (GetGPUBackend() == GPUBackend::VULKAN) {
+		AddTab("DevSystemInfoPipelineLog", si->T("Pipeline Log"), [this](UI::LinearLayout *parent) {
+			CreatePipelineLogTab(parent);
+		});
+	}
+}
+
+void SystemInfoScreen::CreatePipelineLogTab(UI::LinearLayout *parent) {
+	using namespace UI;
+	auto si = GetI18NCategory(I18NCat::SYSINFO);
+
+	parent->Add(new CheckBox(PipelineLog::RecordingFlag(), si->T("PipelineLogRecord", "Record pipeline measurement log")));
+	parent->Add(new TextView(si->T("PipelineLogSavePath", "On stop, entries are saved to PSP/LOG/pipeline_measurement_<game>.log"), ALIGN_LEFT, true));
+
+	const std::vector<std::string> entries = PipelineLog::Entries();
+	pipelineLogEntries_ = new TextView(JoinLogEntries(entries), ALIGN_LEFT, true);
+	pipelineLogEntries_->SetWordWrap();
+	pipelineLogEntriesShown_ = (int)entries.size();
+	parent->Add(pipelineLogEntries_);
+}
+
+// Make a game title safe for use as a log filename component.
+static std::string SanitizeLogName(const std::string &s) {
+	std::string out;
+	out.reserve(s.size());
+	char prev = 0;
+	for (char c : s) {
+		const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.';
+		if (ok) {
+			out.push_back(c);
+			prev = c;
+		} else if (prev != '_') {
+			out.push_back('_');
+			prev = '_';
+		}
+	}
+	while (!out.empty() && out.front() == '_')
+		out.erase(out.begin());
+	while (!out.empty() && out.back() == '_')
+		out.pop_back();
+	if (out.size() > 48)
+		out.resize(48);
+	return out;
+}
+
+void SystemInfoScreen::SavePipelineLogEntries() {
+	auto si = GetI18NCategory(I18NCat::SYSINFO);
+
+	const std::vector<std::string> entries = PipelineLog::Entries();
+	if (entries.empty()) {
+		return;
+	}
+
+	const Path logDir = g_Config.memStickDirectory / "PSP" / "LOG";
+	std::string gameTitle;
+	if (PSP_IsInited()) {
+		gameTitle = g_paramSFO.GetValueString("TITLE");
+		if (gameTitle.empty())
+			gameTitle = g_paramSFO.GetDiscID();
+	}
+	if (gameTitle.empty())
+		gameTitle = PipelineLog::LastGameTitle();
+	std::string slug = SanitizeLogName(gameTitle);
+	if (slug.empty())
+		slug = "menu";
+	const std::string fileName = "pipeline_measurement_" + slug + ".log";
+	const Path logPath = logDir / fileName;
+	std::string content;
+	if (File::Exists(logPath)) {
+		File::ReadTextFileToString(logPath, &content);
+	}
+	if (!content.empty() && content.back() != '\n') {
+		content += "\n";
+	}
+	content += "=== saved " + PipelineLog::GetCurrentStamp() + " ===\n";
+	for (const std::string &entry : entries) {
+		content += entry;
+		content += "\n";
+	}
+
+	if (!File::CreateFullPath(logDir) || !File::WriteStringToFile(true, content, logPath)) {
+		const std::string failMsg = std::string(si->T("PipelineLogSaveFailed", "Failed to save pipeline log:")) + " PSP/LOG/" + fileName;
+		g_OSD.Show(OSDType::MESSAGE_ERROR, failMsg, 7.0f);
+		return;
+	}
+	PipelineLog::ClearEntries();
+	const std::string savedMsg = std::string(si->T("PipelineLogSaved", "Pipeline log saved:")) + " PSP/LOG/" + fileName;
+	g_OSD.Show(OSDType::MESSAGE_SUCCESS, savedMsg, 7.0f);
 }
 
 void SystemInfoScreen::CreateDeviceInfoTab(UI::LinearLayout *deviceSpecs) {

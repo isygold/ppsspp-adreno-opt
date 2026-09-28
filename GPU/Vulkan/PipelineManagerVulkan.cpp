@@ -1,12 +1,17 @@
+#include <cstdio>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
-
+#include <string>
+#include <vector>
 #include "Common/Profiler/Profiler.h"
 
 #include "Common/Log.h"
 #include "Common/StringUtils.h"
+#include "Common/TimeUtil.h"
+#include "Common/Data/Text/StringWriter.h"
 #include "Common/GPU/Vulkan/VulkanContext.h"
 #include "GPU/Vulkan/PipelineManagerVulkan.h"
 #include "GPU/Vulkan/ShaderManagerVulkan.h"
@@ -22,7 +27,7 @@ u32 VulkanPipeline::GetVariantsBitmask() const {
 	return pipeline->GetVariantsBitmask();
 }
 
-PipelineManagerVulkan::PipelineManagerVulkan(VulkanContext *vulkan) : pipelines_(256), mergedKeys_(256), vulkan_(vulkan) {
+PipelineManagerVulkan::PipelineManagerVulkan(VulkanContext *vulkan) : pipelines_(256), mergedKeys_(256), mergedDepthKeys_(256), mergedBlendKeys_(256), vulkan_(vulkan) {
 	// The pipeline cache is created on demand (or explicitly through Load).
 }
 
@@ -42,6 +47,109 @@ PipelineManagerVulkan::~PipelineManagerVulkan() {
 	vulkan_ = nullptr;
 }
 
+namespace PipelineLog {
+	static bool s_recording = false;
+	static int s_frameCounter = 0;
+	static std::vector<std::string> s_entries;
+	static std::string s_lastGameTitle;
+	static std::mutex s_mutex;
+
+	bool *RecordingFlag() {
+		return &s_recording;
+	}
+
+	std::string GetCurrentStamp() {
+		return GetCurrentTimeHHMMSS();
+	}
+
+	void AddEntry(std::string entry) {
+		if (!s_recording)
+			return;
+		std::lock_guard<std::mutex> guard(s_mutex);
+		s_entries.push_back(std::move(entry));
+	}
+
+	std::vector<std::string> Entries() {
+		std::lock_guard<std::mutex> guard(s_mutex);
+		return s_entries;
+	}
+
+	void ClearEntries() {
+		std::lock_guard<std::mutex> guard(s_mutex);
+		s_entries.clear();
+	}
+
+	void SetLastGameTitle(std::string title) {
+		std::lock_guard<std::mutex> guard(s_mutex);
+		s_lastGameTitle = std::move(title);
+	}
+
+	std::string LastGameTitle() {
+		std::lock_guard<std::mutex> guard(s_mutex);
+		return s_lastGameTitle;
+	}
+
+	// Frame-time measurement: per-sample window + per-session accumulators.
+	static double s_winFrameMaxMs = 0.0;
+	static int s_winLongFrames = 0;
+	static double s_sessFrameMaxMs = 0.0;
+	static int s_sessLongFrames = 0;
+	static double s_lastFrameT = 0.0;
+
+	void ResetSession() {
+		s_winFrameMaxMs = 0.0;
+		s_winLongFrames = 0;
+		s_sessFrameMaxMs = 0.0;
+		s_sessLongFrames = 0;
+		s_lastFrameT = 0.0;
+	}
+
+	static std::string SampleLine(const Stats &stats, bool sessionTotal) {
+		char buf[320];
+		const float pct = stats.created > 0 ? 100.0f * stats.mergeable / stats.created : 0.0f;
+		const double frameMax = sessionTotal ? s_sessFrameMaxMs : s_winFrameMaxMs;
+		const int longFrames = sessionTotal ? s_sessLongFrames : s_winLongFrames;
+		snprintf(buf, sizeof(buf), "%s | pipelines: %d created | mergeable: %d (%.1f%%) | depth-only: %d | blend-only: %d | create: %.1fms (max %.1fms) | frame max: %.1fms (>50ms: %d)",
+			GetCurrentTimeHHMMSS().c_str(), stats.created, stats.mergeable, pct, stats.depthOnly, stats.blendOnly,
+			stats.createMs, stats.createMaxMs, frameMax, longFrames);
+		if (!sessionTotal) {
+			s_winFrameMaxMs = 0.0;
+			s_winLongFrames = 0;
+		}
+		return buf;
+	}
+
+	void Frame(const Stats &stats, const std::string &gameTitle) {
+		if (!s_recording) {
+			s_frameCounter = 0;
+			s_lastFrameT = 0.0;
+			return;
+		}
+		const double now = time_now_d();
+		if (s_lastFrameT > 0.0) {
+			const double dtMs = (now - s_lastFrameT) * 1000.0;
+			if (dtMs > 0.0 && dtMs < 1000.0) {  // ignore pauses and menu switches
+				if (dtMs > s_winFrameMaxMs) s_winFrameMaxMs = dtMs;
+				if (dtMs > s_sessFrameMaxMs) s_sessFrameMaxMs = dtMs;
+				if (dtMs > 50.0) {
+					s_winLongFrames++;
+					s_sessLongFrames++;
+				}
+			}
+		}
+		s_lastFrameT = now;
+		// Track which game is being measured while frames run, so the saved
+		// file can be named after it even if recording started in the menu.
+		if (!gameTitle.empty())
+			SetLastGameTitle(gameTitle);
+		// About 10 seconds at 60 fps.
+		if (++s_frameCounter < 600)
+			return;
+		s_frameCounter = 0;
+		AddEntry(SampleLine(stats, false));
+	}
+}  // namespace PipelineLog
+
 void PipelineManagerVulkan::Clear() {
 	pipelines_.Iterate([&](const VulkanPipelineKey &key, VulkanPipeline *value) {
 		if (!value->pipeline) {
@@ -56,11 +164,32 @@ void PipelineManagerVulkan::Clear() {
 	const int created = (int)pipelines_.size();
 	if (created > 0) {
 		// MEASUREMENT: one line per game session, for the pipeline-merge question.
-		INFO_LOG(Log::G3D, "Pipeline measurement: %d created, %d mergeable (%.1f%%)", created, mergeableCount_, 100.0f * mergeableCount_ / created);
+		const PipelineLog::Stats stats = GetMeasurementStats();
+		INFO_LOG(Log::G3D, "Pipeline measurement: %d created, %d mergeable (%.1f%%), %.1fms in creation (max %.1fms)",
+			stats.created, stats.mergeable, 100.0f * stats.mergeable / stats.created, stats.createMs, stats.createMaxMs);
+		PipelineLog::AddEntry("=== session ended " + PipelineLog::SampleLine(stats, true) + " ===");
 	}
 	pipelines_.Clear();
 	mergeableCount_ = 0;
+	depthOnlyCount_ = 0;
+	blendOnlyCount_ = 0;
+	createMs_ = 0.0;
+	createMaxMs_ = 0.0;
 	mergedKeys_.Clear();
+	mergedDepthKeys_.Clear();
+	mergedBlendKeys_.Clear();
+	PipelineLog::ResetSession();
+}
+
+PipelineLog::Stats PipelineManagerVulkan::GetMeasurementStats() const {
+	PipelineLog::Stats stats;
+	stats.created = (int)pipelines_.size();
+	stats.mergeable = mergeableCount_;
+	stats.depthOnly = depthOnlyCount_;
+	stats.blendOnly = blendOnlyCount_;
+	stats.createMs = createMs_;
+	stats.createMaxMs = createMaxMs_;
+	return stats;
 }
 
 // MEASUREMENT: zero the raster-key fields that EDS1/EDS3 would move to dynamic state,
@@ -434,6 +563,28 @@ VulkanPipeline *PipelineManagerVulkan::GetOrCreatePipeline(VulkanRenderManager *
 			mergedKeys_.Insert(masked, 1);
 		}
 	}
+	// MEASUREMENT: scoped probes - what would merging yield if only one group
+	// (depth/stencil or blend) left the key? Gated by the matching capability.
+	if (eds) {
+		VulkanPipelineKey dKey = key;
+		dKey.raster = MaskedRasterKey(key.raster, true, false);
+		int dSlot;
+		if (mergedDepthKeys_.Get(dKey, &dSlot)) {
+			depthOnlyCount_++;
+		} else {
+			mergedDepthKeys_.Insert(dKey, 1);
+		}
+	}
+	if (eds3) {
+		VulkanPipelineKey bKey = key;
+		bKey.raster = MaskedRasterKey(key.raster, false, true);
+		int bSlot;
+		if (mergedBlendKeys_.Get(bKey, &bSlot)) {
+			blendOnlyCount_++;
+		} else {
+			mergedBlendKeys_.Insert(bKey, 1);
+		}
+	}
 
 	PipelineFlags pipelineFlags = (PipelineFlags)0;
 	if (fs->Flags() & FragmentShaderFlags::USES_DISCARD) {
@@ -448,9 +599,20 @@ VulkanPipeline *PipelineManagerVulkan::GetOrCreatePipeline(VulkanRenderManager *
 
 	VkSampleCountFlagBits sampleCount = MultiSampleLevelToFlagBits(multiSampleLevel);
 
+	// MEASUREMENT: time the actual creation - this is the hitch cost.
+	const double createStart = time_now_d();
 	pipeline = CreateVulkanPipeline(
 		renderManager, pipelineCache_, layout, pipelineFlags, sampleCount,
 		rasterKey, decFmt, vs, fs, useHwTransform, variantBitmask, cacheLoad);
+	const double createMs = (time_now_d() - createStart) * 1000.0;
+	createMs_ += createMs;
+	if (createMs > createMaxMs_)
+		createMaxMs_ = createMs;
+	if (createMs >= 8.0) {
+		char createBuf[96];
+		snprintf(createBuf, sizeof(createBuf), "%s | long create: %.1fms", GetCurrentTimeHHMMSS().c_str(), createMs);
+		PipelineLog::AddEntry(createBuf);
+	}
 
 	// If the above failed, we got a null pipeline. We still insert it to keep track.
 	pipelines_.Insert(key, pipeline);

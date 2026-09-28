@@ -387,6 +387,23 @@ void GetCurrentTimeFormatted(char formattedTime[13]) {
 #endif
 }
 
+// Return the current local time as Hours:Minutes:Seconds, e.g. "14:07:33".
+std::string GetCurrentTimeHHMMSS() {
+	char buf[16];
+#ifdef _WIN32
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	snprintf(buf, sizeof(buf), "%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
+#else
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	struct tm tm;
+	localtime_r(&ts.tv_sec, &tm);
+	snprintf(buf, sizeof(buf), "%02d:%02d:%02d", tm.tm_hour, tm.tm_min, tm.tm_sec);
+#endif
+	return buf;
+}
+
 // We don't even bother synchronizing this, it's fine if threads stomp a bit.
 static GMRng g_sleepRandom;
 

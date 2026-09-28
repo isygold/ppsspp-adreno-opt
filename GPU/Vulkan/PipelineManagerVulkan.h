@@ -18,6 +18,8 @@
 #pragma once
 
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "Common/Data/Collections/Hashmaps.h"
 #include "Common/Thread/Promise.h"
@@ -81,6 +83,18 @@ struct VulkanPipeline {
 	u32 GetVariantsBitmask() const;
 };
 
+// MEASUREMENT: snapshot of pipeline-merge statistics for one game session.
+namespace PipelineLog {
+	struct Stats {
+		int created = 0;
+		int mergeable = 0;
+		int depthOnly = 0;
+		int blendOnly = 0;
+		double createMs = 0.0;
+		double createMaxMs = 0.0;
+	};
+}
+
 class PipelineManagerVulkan {
 public:
 	PipelineManagerVulkan(VulkanContext *ctx);
@@ -92,6 +106,7 @@ public:
 	int GetNumPipelines() const { return (int)pipelines_.size(); }
 	// MEASUREMENT: of those, how many differ only in state that EDS moves to dynamic.
 	int GetNumMergeablePipelines() const { return mergeableCount_; }
+	PipelineLog::Stats GetMeasurementStats() const;
 
 	void Clear();
 
@@ -111,7 +126,27 @@ private:
 	DenseHashMap<VulkanPipelineKey, VulkanPipeline *> pipelines_;
 	// MEASUREMENT: masked keys of every pipeline created, to spot merge candidates.
 	DenseHashMap<VulkanPipelineKey, int> mergedKeys_;
+	DenseHashMap<VulkanPipelineKey, int> mergedDepthKeys_;
+	DenseHashMap<VulkanPipelineKey, int> mergedBlendKeys_;
 	int mergeableCount_ = 0;
+	int depthOnlyCount_ = 0;
+	int blendOnlyCount_ = 0;
+	double createMs_ = 0.0;
+	double createMaxMs_ = 0.0;
 	VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
 	VulkanContext *vulkan_;
 };
+
+// In-app log of pipeline-merge measurement samples. Entries accumulate while
+// recording; the System Information screen shows them and saves them to file.
+namespace PipelineLog {
+	bool *RecordingFlag();  // bound to the record checkbox
+	std::string GetCurrentStamp();  // "HH:MM:SS"
+	void AddEntry(std::string entry);  // no-op unless recording
+	std::vector<std::string> Entries();
+	void ClearEntries();
+	void SetLastGameTitle(std::string title);
+	std::string LastGameTitle();
+	void ResetSession();  // frame-time accumulators; on record start and at session end
+	void Frame(const Stats &stats, const std::string &gameTitle);  // call every host frame; samples every ~10s
+}

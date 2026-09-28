@@ -29,4 +29,12 @@ private:
 	void CreateDriverBugsTab(UI::LinearLayout *storage);
 	void CreateOpenGLExtsTab(UI::LinearLayout *gpuExtensions);
 	void CreateVulkanExtsTab(UI::LinearLayout *gpuExtensions);
+	void CreatePipelineLogTab(UI::LinearLayout *pipelineLog);
+	void SavePipelineLogEntries();
+
+	// Pipeline log tab state.
+	UI::TextView *pipelineLogEntries_ = nullptr;
+	int pipelineLogEntriesShown_ = 0;
+	bool pipelineLogWasRecording_ = false;
+	bool pipelineLogInit_ = false;
 };
