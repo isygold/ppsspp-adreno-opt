@@ -90,6 +90,8 @@ public:
 	VulkanPipeline *GetOrCreatePipeline(VulkanRenderManager *renderManager, VKRPipelineLayout *layout, const VulkanPipelineRasterStateKey &rasterKey, const DecVtxFormat *decFmt,
 		VulkanVertexShader *vs, VulkanFragmentShader *fs, bool useHwTransform, u32 variantMask, int multiSampleLevel, bool cacheLoad);
 	int GetNumPipelines() const { return (int)pipelines_.size(); }
+	// MEASUREMENT: of those, how many differ only in state that EDS moves to dynamic.
+	int GetNumMergeablePipelines() const { return mergeableCount_; }
 
 	void Clear();
 
@@ -107,6 +109,9 @@ public:
 
 private:
 	DenseHashMap<VulkanPipelineKey, VulkanPipeline *> pipelines_;
+	// MEASUREMENT: masked keys of every pipeline created, to spot merge candidates.
+	DenseHashMap<VulkanPipelineKey, int> mergedKeys_;
+	int mergeableCount_ = 0;
 	VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
 	VulkanContext *vulkan_;
 };

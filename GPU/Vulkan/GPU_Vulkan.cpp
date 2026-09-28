@@ -417,6 +417,8 @@ void GPU_Vulkan::GetStats(StringWriter &w) {
 		pipelineManager_->GetNumPipelines(),
 		drawStats.pushVertexSpaceUsed,
 		drawStats.pushIndexSpaceUsed);
+	// MEASUREMENT: live view of the merge counter (see PipelineManagerVulkan::Clear log).
+	w.F("Pipelines that EDS key-merging would eliminate: %i\n", pipelineManager_->GetNumMergeablePipelines());
 	textureCacheVulkan_->GetStats(w);
 	FormatGPUStatsCommon(w);
 }

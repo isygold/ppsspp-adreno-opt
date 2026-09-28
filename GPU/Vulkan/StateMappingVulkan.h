@@ -63,4 +63,8 @@ struct VulkanPipelineRasterStateKey {
 		size_t size = sizeof(VulkanPipelineRasterStateKey);
 		return memcmp(this, &other, size) < 0;
 	}
+	bool operator == (const VulkanPipelineRasterStateKey &other) const {
+		constexpr size_t size = sizeof(VulkanPipelineRasterStateKey);
+		return memcmp(this, &other, size) == 0;
+	}
 };

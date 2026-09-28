@@ -22,7 +22,7 @@ u32 VulkanPipeline::GetVariantsBitmask() const {
 	return pipeline->GetVariantsBitmask();
 }
 
-PipelineManagerVulkan::PipelineManagerVulkan(VulkanContext *vulkan) : pipelines_(256), vulkan_(vulkan) {
+PipelineManagerVulkan::PipelineManagerVulkan(VulkanContext *vulkan) : pipelines_(256), mergedKeys_(256), vulkan_(vulkan) {
 	// The pipeline cache is created on demand (or explicitly through Load).
 }
 
@@ -53,7 +53,42 @@ void PipelineManagerVulkan::Clear() {
 		delete value;
 	});
 
+	const int created = (int)pipelines_.size();
+	if (created > 0) {
+		// MEASUREMENT: one line per game session, for the pipeline-merge question.
+		INFO_LOG(Log::G3D, "Pipeline measurement: %d created, %d mergeable (%.1f%%)", created, mergeableCount_, 100.0f * mergeableCount_ / created);
+	}
 	pipelines_.Clear();
+	mergeableCount_ = 0;
+	mergedKeys_.Clear();
+}
+
+// MEASUREMENT: zero the raster-key fields that EDS1/EDS3 would move to dynamic state,
+// so keys differing only in those compare equal. Everything else (logic op, depth clamp,
+// rasterizer) stays, since the patch doesn't make it dynamic.
+static VulkanPipelineRasterStateKey MaskedRasterKey(const VulkanPipelineRasterStateKey &raster, bool eds, bool eds3) {
+	VulkanPipelineRasterStateKey masked = raster;
+	if (eds) {
+		masked.depthTestEnable = 0;
+		masked.depthWriteEnable = 0;
+		masked.depthCompareOp = 0;
+		masked.stencilTestEnable = 0;
+		masked.stencilCompareOp = 0;
+		masked.stencilPassOp = 0;
+		masked.stencilFailOp = 0;
+		masked.stencilDepthFailOp = 0;
+	}
+	if (eds3) {
+		masked.blendEnable = 0;
+		masked.srcColor = 0;
+		masked.destColor = 0;
+		masked.srcAlpha = 0;
+		masked.destAlpha = 0;
+		masked.blendOpColor = 0;
+		masked.blendOpAlpha = 0;
+		masked.colorWriteMask = 0;
+	}
+	return masked;
 }
 
 void PipelineManagerVulkan::InvalidateMSAAPipelines() {
@@ -382,6 +417,22 @@ VulkanPipeline *PipelineManagerVulkan::GetOrCreatePipeline(VulkanRenderManager *
 	VulkanPipeline *pipeline;
 	if (pipelines_.Get(key, &pipeline)) {
 		return pipeline;
+	}
+
+	// MEASUREMENT: would this creation collapse onto an earlier pipeline if the
+	// dynamic-state fields left the key? Only creations are counted, never lookups.
+	const bool eds = vulkan_->GetDeviceFeatures().enabled.extendedDynamicState.extendedDynamicState;
+	const auto &eds3Features = vulkan_->GetDeviceFeatures().enabled.extendedDynamicState3;
+	const bool eds3 = eds3Features.extendedDynamicState3ColorBlendEnable && eds3Features.extendedDynamicState3ColorBlendEquation && eds3Features.extendedDynamicState3ColorWriteMask;
+	if (eds || eds3) {
+		VulkanPipelineKey masked = key;
+		masked.raster = MaskedRasterKey(key.raster, eds, eds3);
+		int slot;
+		if (mergedKeys_.Get(masked, &slot)) {
+			mergeableCount_++;
+		} else {
+			mergedKeys_.Insert(masked, 1);
+		}
 	}
 
 	PipelineFlags pipelineFlags = (PipelineFlags)0;
