@@ -82,6 +82,7 @@ using namespace std::placeholders;
 #include "UI/PauseScreen.h"
 #include "UI/LoadStateConfirmScreen.h"
 #include "UI/MainScreen.h"
+#include "UI/BigPictureScreen.h"
 #include "UI/Background.h"
 #include "UI/EmuScreen.h"
 #include "UI/DevScreens.h"
@@ -194,7 +195,7 @@ bool EmuScreen::bootAllowStorage(const Path &filename) {
 
 	case PERMISSION_STATUS_DENIED:
 		if (!bootPending_) {
-			screenManager()->switchScreen(new MainScreen());
+			screenManager()->switchScreen(CreateHomeScreen());
 		}
 		return false;
 
@@ -549,7 +550,7 @@ void EmuScreen::dialogFinished(const Screen *dialog, DialogResult result) {
 	// DR_CANCEL/DR_BACK means clicked on "continue", DR_OK means clicked on "back to menu",
 	// DR_YES means a message sent to PauseMenu by System_PostUIMessage.
 	if ((result == DR_OK || quit_) && !bootPending_) {
-		screenManager()->switchScreen(new MainScreen());
+		screenManager()->switchScreen(CreateHomeScreen());
 		quit_ = false;
 	} else {
 		RecreateViews();
@@ -599,7 +600,7 @@ void EmuScreen::sendMessage(UIMessage message, const char *value) {
 			INFO_LOG(Log::Loader, "REQUEST_GAME_STOP: running exit callback before shutdown.");
 		} else {
 			// No callback (or already in flight, or core not running) - the destructor will take care of shutting down.
-			screenManager()->switchScreen(new MainScreen());
+			screenManager()->switchScreen(CreateHomeScreen());
 		}
 	} else if (message == UIMessage::REQUEST_GAME_RESET) {
 		if (bootPending_) {
@@ -618,7 +619,7 @@ void EmuScreen::sendMessage(UIMessage message, const char *value) {
 		if (!PSP_InitStart(PSP_CoreParameter())) {
 			bootPending_ = false;
 			WARN_LOG(Log::Loader, "Error resetting");
-			screenManager()->switchScreen(new MainScreen());
+			screenManager()->switchScreen(CreateHomeScreen());
 			return;
 		}
 	} else if (message == UIMessage::REQUEST_GAME_BOOT) {
@@ -1577,7 +1578,7 @@ bool EmuScreen::checkPowerDown() {
 	// Also for REQUEST_STOP.
 	if (coreState == CORE_POWERDOWN && PSP_GetBootState() == BootState::Complete && !bootPending_) {
 		INFO_LOG(Log::System, "SELF-POWERDOWN!");
-		screenManager()->switchScreen(new MainScreen());
+		screenManager()->switchScreen(CreateHomeScreen());
 		return true;
 	}
 	return false;
@@ -1876,7 +1877,7 @@ ScreenRenderFlags EmuScreen::RunEmulation(bool skipBufferEffects) {
 			if (!PSP_InitStart(PSP_CoreParameter())) {
 				bootPending_ = false;
 				WARN_LOG(Log::Loader, "Error resetting");
-				screenManager()->switchScreen(new MainScreen());
+				screenManager()->switchScreen(CreateHomeScreen());
 			}
 		}
 	}

@@ -53,6 +53,7 @@
 #include "UI/BaseScreens.h"
 #include "UI/MiscScreens.h"
 #include "UI/MainScreen.h"
+#include "UI/BigPictureScreen.h"
 #include "UI/BackgroundAudio.h"
 #include "UI/SavedataScreen.h"
 #include "UI/MiscViews.h"
@@ -577,7 +578,7 @@ void GameScreen::CreateContextMenu(UI::ViewGroup *parent) {
 			System_PostUIMessage(UIMessage::GAME_SELECTED, "");
 			// TODO: We should be able to do TriggerFinish here, but unfortunately
 			// the screen manager still considers the popup dialog the current dialog.
-			screenManager()->switchScreen(new MainScreen());
+			screenManager()->switchScreen(CreateHomeScreen());
 		});
 	}
 
@@ -718,7 +719,7 @@ void GameScreen::OnDeleteGame(UI::EventParams &e) {
 				info_->Delete();
 				g_gameInfoCache->Clear();
 				g_recentFiles.Remove(gamePath.c_str());
-				sm->switchScreen(new MainScreen());
+				sm->switchScreen(CreateHomeScreen());
 			}
 		}));
 	}

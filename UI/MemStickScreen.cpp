@@ -51,6 +51,7 @@
 
 #include "UI/MemStickScreen.h"
 #include "UI/MainScreen.h"
+#include "UI/BigPictureScreen.h"
 #include "UI/BaseScreens.h"
 #include "UI/OnScreenDisplay.h"
 
@@ -384,7 +385,7 @@ void MemStickScreen::UseInternalStorage(UI::EventParams &params) {
 			ERROR_LOG_REPORT(Log::System, "Could not switch memstick path in setup (internal)");
 		}
 		// Don't have a confirmation dialog that would otherwise do it for us, need to just switch directly to the main screen.
-		screenManager()->switchScreen(new MainScreen());
+		screenManager()->switchScreen(CreateHomeScreen());
 	} else if (pendingMemStickFolder != g_Config.memStickDirectory) {
 		// Always ask for confirmation when called from the UI. Likely there's already some data.
 		screenManager()->push(new ConfirmMemstickMoveScreen(pendingMemStickFolder, false));
@@ -673,7 +674,7 @@ void ConfirmMemstickMoveScreen::FinishFolderMove() {
 		if (g_Config.Save("MemstickPathChanged")) {
 			INFO_LOG(Log::System, "Initial setup succeeded. Switching to main screen!");
 			// TriggerFinish(DialogResult::DR_OK);
-			screenManager()->switchScreen(new MainScreen());
+			screenManager()->switchScreen(CreateHomeScreen());
 		} else {
 			INFO_LOG(Log::System, "Initial setup failed.");
 			error_ = ms->T("Failed to save config");

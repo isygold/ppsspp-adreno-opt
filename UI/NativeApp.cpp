@@ -166,6 +166,8 @@
 
 #include <Core/HLE/Plugins.h>
 
+#include "UI/BigPictureScreen.h"
+
 bool HandleGlobalMessage(UIMessage message, const std::string &value);
 static void ProcessWheelRelease(InputKeyCode keyCode, double now, bool keyPress);
 void SaveFrameDump();
@@ -784,10 +786,10 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 	} else if (gotoGameSettings) {
 		g_screenManager->switchScreen(new LogoScreen(AfterLogoScreen::TO_GAME_SETTINGS));
 	} else if (gotoTouchScreenTest) {
-		g_screenManager->switchScreen(new MainScreen());
+		g_screenManager->switchScreen(CreateHomeScreen());
 		g_screenManager->push(new TouchTestScreen(Path()));
 	} else if (gotoDeveloperTools) {
-		g_screenManager->switchScreen(new MainScreen());
+		g_screenManager->switchScreen(CreateHomeScreen());
 		g_screenManager->push(new DeveloperToolsScreen(Path()));
 	} else if (skipLogo && !boot_filename.empty()) {
 		INFO_LOG(Log::System, "Launching EmuScreen with boot filename '%s'", boot_filename.c_str());

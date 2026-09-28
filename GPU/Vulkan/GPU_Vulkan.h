@@ -60,6 +60,8 @@ public:
 		return textureCacheVulkan_;
 	}
 
+	const PipelineManagerVulkan *GetPipelineManager() const { return pipelineManager_; }
+
 protected:
 	void FinishDeferred() override;
 	void CheckRenderResized(const DisplayLayoutConfig &config) override;

@@ -56,6 +56,7 @@
 #include "UI/EmuScreen.h"
 #include "UI/GameSettingsScreen.h"
 #include "UI/MainScreen.h"
+#include "UI/BigPictureScreen.h"
 #include "UI/MiscScreens.h"
 #include "UI/MemStickScreen.h"
 #include "UI/MiscViews.h"
@@ -369,7 +370,7 @@ void LogoScreen::Next() {
 			if (!gamePath.empty()) {
 				screenManager()->switchScreen(new EmuScreen(gamePath));
 			} else {
-				screenManager()->switchScreen(new MainScreen());
+				screenManager()->switchScreen(CreateHomeScreen());
 			}
 			screenManager()->push(new GameSettingsScreen(gamePath));
 			break;
@@ -381,7 +382,7 @@ void LogoScreen::Next() {
 			if (boot_filename.size()) {
 				screenManager()->switchScreen(new EmuScreen(gamePath));
 			} else {
-				screenManager()->switchScreen(new MainScreen());
+				screenManager()->switchScreen(CreateHomeScreen());
 			}
 			break;
 		}

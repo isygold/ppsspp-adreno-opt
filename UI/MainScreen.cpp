@@ -60,7 +60,7 @@
 
 bool MainScreen::showHomebrewTab = false;
 
-static void LaunchFile(ScreenManager *screenManager, Screen *currentScreen, const Path &path) {
+void LaunchFile(ScreenManager *screenManager, Screen *currentScreen, const Path &path) {
 	std::string extension = path.GetFileExtension();
 	if (extension == ".zip" || extension == ".7z") {
 		// If is a zip file, we have a screen for that.

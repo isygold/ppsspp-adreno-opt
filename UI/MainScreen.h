@@ -130,3 +130,6 @@ private:
 };
 
 void LaunchBuyGold(ScreenManager *screenManager);
+
+// Shared by MainScreen and BigPictureScreen when a game is chosen from a grid.
+void LaunchFile(ScreenManager *screenManager, Screen *currentScreen, const Path &path);
