@@ -30,6 +30,7 @@
 
 #include "UI/DevScreens.h"
 #include "UI/DebugOverlay.h"
+#include "UI/BigPictureScreen.h"
 
 // For std::max
 #include <algorithm>
@@ -501,6 +502,28 @@ void DrawFPS(UIContext *ctx, const Bounds &bounds) {
 			const int percentage = System_GetPropertyInt(SYSPROP_BATTERY_PERCENTAGE);
 			// Just plain append battery. Add linebreak?
 			w.F(" Battery: %d%%", percentage);
+		}
+	}
+	if (g_Config.bBigPictureMode) {
+		// Big Picture's FPS HUD also shows frame cost and pipeline facts.
+		double strideMs = 0.0;
+		const auto &history = ctx->GetDrawContext()->FrameTimeHistory();
+		const FrameTimeData d0 = history.Back(0);
+		const FrameTimeData d1 = history.Back(1);
+		if (d0.frameBegin > 0.0 && d1.frameBegin > 0.0 && d0.frameBegin > d1.frameBegin)
+			strideMs = (d0.frameBegin - d1.frameBegin) * 1000.0;
+		if (strideMs > 0.0)
+			w.F(" | %0.1f ms", strideMs);
+		const int pipelines = GetBigPicturePipelineCount();
+		if (pipelines > 0) {
+			const BigPictureGPUStatus status = GetBigPictureGPUStatus(ctx->GetDrawContext());
+			w.F(" | %d pipelines", pipelines);
+			if (status.eds1 && status.eds3)
+				w.F(" | EDS1+EDS3");
+			else if (status.eds1)
+				w.F(" | EDS1");
+			else if (status.eds3)
+				w.F(" | EDS3");
 		}
 	}
 
