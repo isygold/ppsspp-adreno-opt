@@ -247,6 +247,26 @@ static const char * const altBootNames[] = {
 	//"disc0:/PSP_GAME/SYSDIR/ss.RAW",//Code Geass: Lost Colors chinese version
 };
 
+// Big Picture Mode: on first launch of the flagship title, pin a per-game profile
+// that snapshots the current (known-good) settings for that game only. Matches on
+// the game's own TITLE, so region and filename don't matter.
+static void MaybePinFlagshipGameConfig(const std::string &gameId, std::string_view title) {
+	if (!g_Config.bBigPictureMode || gameId.empty() || g_Config.HasGameConfig(gameId))
+		return;
+	std::string lower;
+	lower.reserve(title.size());
+	for (char c : title)
+		lower.push_back((c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c);
+	const bool flagship = lower.find("efootball") != std::string::npos
+		|| lower.find("pes 20") != std::string::npos
+		|| lower.find("pes20") != std::string::npos;
+	if (!flagship)
+		return;
+	INFO_LOG(Log::Loader, "Big Picture: pinning flagship profile for %s (%.*s)", gameId.c_str(), (int)title.size(), title.data());
+	g_Config.CreateGameConfig(gameId);
+	g_Config.SaveGameConfig(gameId, title);
+}
+
 bool Load_PSP_ISO(FileLoader *fileLoader, std::string *error_string) {
 	std::string bootpath("disc0:/PSP_GAME/SYSDIR/EBOOT.BIN");
 
@@ -302,7 +322,10 @@ bool Load_PSP_ISO(FileLoader *fileLoader, std::string *error_string) {
 	}
 
 	// If there's a game-specific config, load it.
-	g_Config.LoadGameConfig(id);
+	const bool hadGameConfig = g_Config.LoadGameConfig(id);
+	// Big Picture Mode pins the flagship profile on its first launch instead.
+	if (!hadGameConfig)
+		MaybePinFlagshipGameConfig(id, g_paramSFO.GetValueString("TITLE"));
 
 	System_PostUIMessage(UIMessage::CONFIG_LOADED);
 	INFO_LOG(Log::Loader, "Loading %s...", bootpath.c_str());
@@ -441,7 +464,9 @@ bool Load_PSP_ELF_PBP(FileLoader *fileLoader, std::string_view discId, std::stri
 			File::Rename(oldNamePrefix.WithExtraExtension(".jpg"), newPrefix.WithExtraExtension(".jpg"));
 	}
 
-	g_Config.LoadGameConfig(discID);
+	const bool hadGameConfig = g_Config.LoadGameConfig(discID);
+	if (!hadGameConfig)
+		MaybePinFlagshipGameConfig(discID, g_paramSFO.GetValueString("TITLE"));
 
 	return __KernelLoadExec(finalName.c_str(), 0, error_string);
 }
