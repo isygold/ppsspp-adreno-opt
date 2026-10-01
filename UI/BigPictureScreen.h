@@ -18,8 +18,10 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "Common/File/Path.h"
+#include "Common/File/PathBrowser.h"
 #include "Common/UI/ViewGroup.h"
 #include "UI/BaseScreens.h"
 
@@ -65,15 +67,86 @@ void BigPictureOnEmuFrame();
 // Snapshots an in-progress session; called on every path back to the home screen.
 void BigPictureFinalizeSession();
 
+// Lifetime totals for one game, keyed by disc ID (path fallback), stored in
+// BigPictureStats.ini next to ppsspp.ini.
+struct BigPictureGameStats {
+	bool valid = false;
+	long long playedSec = 0;
+	int sessions = 0;
+	float avgFps = 0.0f;
+	float worstFrameMs = 0.0f;
+	long long lastPlayedUnix = 0;
+};
+
+bool BigPictureGetGameStats(const std::string &key, BigPictureGameStats *out);
+
 // The home screen, honoring g_Config.bBigPictureMode. Every "back to menu"
 // path goes through this so the mode behaves consistently.
 Screen *CreateHomeScreen();
 
+class BigPictureView;
+
+// The hero-carousel home: games slide horizontally, the selection gets a
+// pulsing comet ring, and a drop menu (press up/down) reaches Browse,
+// Recent, Settings and Exit.
 class BigPictureScreen : public UIBaseScreen {
 public:
 	const char *tag() const override { return "BigPicture"; }
 
 	bool isTopLevel() const override { return true; }
+
+	bool key(const KeyInput &key) override;
+	void update() override;
+
+	// Hooks for BigPictureView (drawn carousel + touch handling).
+	int SelectedIndex() const { return sel_; }
+	int GameCount() const { return (int)games_.size(); }
+	const Path *GamePath(int i) const {
+		return (i >= 0 && i < (int)games_.size()) ? &games_[i] : nullptr;
+	}
+	std::string StatsKeyForIndex(int i);
+	bool MenuOpen() const { return menuOpen_; }
+	int MenuIndex() const { return menuIdx_; }
+	void Select(int i);
+	void LaunchSelected();
+	void ActivateMenu(int idx);
+	void CloseMenu() { menuOpen_ = false; }
+	static constexpr int kMenuCount = 4;
+
+protected:
+	void CreateViews() override;
+	void DrawBackground(UIContext &ui) override;
+
+private:
+	void OnPlay(UI::EventParams &e);
+	void OnOptions(UI::EventParams &e);
+	void OnClear(UI::EventParams &e);
+	void RebuildGames();
+	void RefreshPreview();
+	void StartDirListing();
+
+	std::vector<Path> games_;
+	std::vector<Path> dirGames_;
+	PathBrowser dirBrowser_;
+	bool dirStarted_ = false;
+	bool dirReady_ = false;
+	int sel_ = 0;
+	bool menuOpen_ = false;
+	int menuIdx_ = 0;
+	bool recentsOnly_ = false;
+	BigPictureView *carousel_ = nullptr;
+	UI::TextView *titleText_ = nullptr;
+	UI::TextView *counterText_ = nullptr;
+	UI::TextView *statsText_ = nullptr;
+	UI::TextView *clockText_ = nullptr;
+	double nextRefresh_ = 0.0;
+};
+
+// The file browser Big Picture used before the carousel; reachable from the
+// carousel menu. Pushed on top of the carousel, so back returns to it.
+class BigPictureBrowseScreen : public UIBaseScreen {
+public:
+	const char *tag() const override { return "BigPictureBrowse"; }
 
 	bool key(const KeyInput &key) override;
 
