@@ -47,6 +47,24 @@ BigPictureGPUStatus GetBigPictureGPUStatus(Draw::DrawContext *draw);
 // Live count of compiled pipeline variants (0 outside a Vulkan game).
 int GetBigPicturePipelineCount();
 
+// What the post-game stats card shows about the previous session.
+struct BigPictureSessionStats {
+	bool valid = false;
+	std::string title;
+	double playedSec = 0.0;     // in-game time, pauses excluded.
+	double avgFps = 0.0;
+	double worstFrameMs = 0.0;
+	int longFrames = 0;         // frames that took over 50 ms.
+};
+
+const BigPictureSessionStats &BigPictureGetLastSession();
+
+// Sampled once per rendered game frame while Big Picture Mode is on; the first
+// in-game frame starts a session.
+void BigPictureOnEmuFrame();
+// Snapshots an in-progress session; called on every path back to the home screen.
+void BigPictureFinalizeSession();
+
 // The home screen, honoring g_Config.bBigPictureMode. Every "back to menu"
 // path goes through this so the mode behaves consistently.
 Screen *CreateHomeScreen();

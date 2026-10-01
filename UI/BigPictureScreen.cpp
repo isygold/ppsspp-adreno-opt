@@ -19,6 +19,7 @@
 
 #include "Common/Data/Text/I18n.h"
 #include "Common/GPU/thin3d.h"
+#include "Common/TimeUtil.h"
 #include "Common/UI/Screen.h"
 #include "Common/UI/View.h"
 #include "Common/UI/ViewGroup.h"
@@ -71,7 +72,67 @@ int GetBigPicturePipelineCount() {
 	return pipelineManager ? pipelineManager->GetNumPipelines() : 0;
 }
 
+// One session at a time, snapshotted on the way back to the home screen.
+static BigPictureSessionStats g_lastSession;
+static bool g_sessionRunning = false;
+static double g_sessionLastFrame = 0.0;
+static double g_sessionActiveSec = 0.0;
+static double g_sessionWorstMs = 0.0;
+static long long g_sessionFrames = 0;
+static long long g_sessionLongFrames = 0;
+static std::string g_sessionTitle;
+
+const BigPictureSessionStats &BigPictureGetLastSession() {
+	return g_lastSession;
+}
+
+void BigPictureOnEmuFrame() {
+	if (!g_Config.bBigPictureMode)
+		return;
+	const bool inGame = GetUIState() == UISTATE_INGAME && PSP_IsInited();
+	const double now = time_now_d();
+	if (inGame && !g_sessionRunning) {
+		g_sessionRunning = true;
+		g_sessionLastFrame = now;
+		g_sessionActiveSec = 0.0;
+		g_sessionWorstMs = 0.0;
+		g_sessionFrames = 0;
+		g_sessionLongFrames = 0;
+		g_sessionTitle.clear();
+	}
+	if (!inGame || !g_sessionRunning)
+		return;
+	const double dtMs = (now - g_sessionLastFrame) * 1000.0;
+	g_sessionLastFrame = now;
+	g_sessionFrames++;
+	if (dtMs > 0.0 && dtMs < 2000.0) {  // skip pause-sized gaps
+		g_sessionActiveSec += dtMs / 1000.0;
+		if (dtMs > g_sessionWorstMs)
+			g_sessionWorstMs = dtMs;
+		if (dtMs > 50.0)
+			g_sessionLongFrames++;
+	}
+	if (g_sessionTitle.empty())
+		g_sessionTitle = g_paramSFO.GetValueString("TITLE");
+}
+
+void BigPictureFinalizeSession() {
+	if (!g_sessionRunning)
+		return;
+	g_sessionRunning = false;
+	if (g_sessionFrames < 1 || g_sessionActiveSec < 0.5)
+		return;  // Too short to be a session.
+	g_lastSession.valid = true;
+	g_lastSession.title = g_sessionTitle.empty() ? "(unknown game)" : g_sessionTitle;
+	g_lastSession.playedSec = g_sessionActiveSec;
+	g_lastSession.avgFps = g_sessionFrames / g_sessionActiveSec;
+	g_lastSession.worstFrameMs = g_sessionWorstMs;
+	g_lastSession.longFrames = (int)g_sessionLongFrames;
+}
+
 Screen *CreateHomeScreen() {
+	// Every return-to-menu path lands here, so the session closes exactly once.
+	BigPictureFinalizeSession();
 	if (g_Config.bBigPictureMode)
 		return new BigPictureScreen();
 	return new MainScreen();
@@ -104,6 +165,19 @@ void BigPictureScreen::CreateViews() {
 	statusText_ = new TextView(statusLine, ALIGN_RIGHT, false);
 	header->Add(statusText_);
 	root_->Add(header);
+
+	// The post-game stats card, when a session has already been recorded.
+	const BigPictureSessionStats &last = BigPictureGetLastSession();
+	if (last.valid) {
+		const std::string sessionLabel = std::string(mm->T("BigPictureLastSession", "Last session"));
+		const int playedMin = (int)(last.playedSec / 60.0);
+		const int playedSec = (int)last.playedSec % 60;
+		char cardBuf[384];
+		snprintf(cardBuf, sizeof(cardBuf), "%s: %s\n%02d:%02d played | avg %0.1f FPS | worst frame %0.0f ms | %d frames over 50 ms",
+			sessionLabel.c_str(), last.title.c_str(),
+			playedMin, playedSec, last.avgFps, last.worstFrameMs, last.longFrames);
+		root_->Add(new TextView(cardBuf, ALIGN_LEFT, false, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(24, 4, 24, 4))));
+	}
 
 	SearchBar *search = new SearchBar(new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 4)));
 	root_->Add(search);

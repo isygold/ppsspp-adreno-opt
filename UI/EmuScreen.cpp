@@ -2029,6 +2029,9 @@ void EmuScreen::renderUI() {
 		if (g_Config.iShowStatusFlags) {
 			DrawFPS(ctx, GetLayoutBounds(*ctx));
 		}
+		if (g_Config.bBigPictureMode) {
+			BigPictureOnEmuFrame();
+		}
 	}
 
 #ifdef USE_PROFILER
