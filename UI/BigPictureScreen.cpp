@@ -235,50 +235,8 @@ Screen *CreateHomeScreen() {
 	return new MainScreen();
 }
 
-static void HSLToRGB(float h, float s, float l, int *r, int *g, int *b) {
-	h = std::fmod(h, 360.0f);
-	if (h < 0.0f)
-		h += 360.0f;
-	const float c = (1.0f - std::fabs(2.0f * l - 1.0f)) * s;
-	const float x = c * (1.0f - std::fabs(std::fmod(h / 60.0f, 2.0f) - 1.0f));
-	const float m = l - c * 0.5f;
-	float rf = 0.0f, gf = 0.0f, bf = 0.0f;
-	if (h < 60.0f) { rf = c; gf = x; }
-	else if (h < 120.0f) { rf = x; gf = c; }
-	else if (h < 180.0f) { gf = c; bf = x; }
-	else if (h < 240.0f) { gf = x; bf = c; }
-	else if (h < 300.0f) { rf = x; bf = c; }
-	else { rf = c; bf = x; }
-	*r = (int)((rf + m) * 255.0f);
-	*g = (int)((gf + m) * 255.0f);
-	*b = (int)((bf + m) * 255.0f);
-}
-
 static uint32_t RGB(int r, int g, int b, int a = 255) {
 	return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
-}
-
-// Deterministic cover placeholder colors, one hue per game path.
-static void GameCoverColors(const std::string &seed, uint32_t *top, uint32_t *bottom) {
-	uint32_t hash = 2166136261u;
-	for (char c : seed) {
-		hash ^= (uint8_t)c;
-		hash *= 16777619u;
-	}
-	const float hue = (float)(hash % 360);
-	int r, g, b;
-	HSLToRGB(hue, 0.55f, 0.45f, &r, &g, &b);
-	*top = RGB(r, g, b);
-	HSLToRGB(hue, 0.50f, 0.22f, &r, &g, &b);
-	*bottom = RGB(r, g, b);
-}
-
-static uint32_t GlowColor(float t) {
-	const int step = (int)(t / 5.0f);
-	const float hue = std::fmod(210.0f + step * 73.0f, 360.0f);
-	int r, g, b;
-	HSLToRGB(hue, 0.95f, 0.65f, &r, &g, &b);
-	return RGB(r, g, b);
 }
 
 struct Point2F {
@@ -286,84 +244,52 @@ struct Point2F {
 	float y;
 };
 
-// Point at parameter u in [0, 1) along a clockwise rounded-rect perimeter.
-static Point2F RoundedRectPoint(const Bounds &r, float rad, float u) {
-	constexpr float kQuarterPi = 1.57079632679f;
-	const float straightH = r.w - 2.0f * rad;
-	const float straightV = r.h - 2.0f * rad;
-	const float arc = kQuarterPi * rad;
-	const float perim = 2.0f * straightH + 2.0f * straightV + 4.0f * arc;
+static Point2F RectPerimeterPoint(const Bounds &r, float u) {
+	const float w = r.w;
+	const float h = r.h;
+	const float perim = 2.0f * (w + h);
 	float s = u * perim;
-	if (s < straightH)
-		return Point2F{ r.x + rad + s, r.y };
-	s -= straightH;
-	if (s < arc) {
-		const float a = -kQuarterPi + (s / arc) * kQuarterPi;
-		return Point2F{ r.x2() - rad + std::cos(a) * rad, r.y + rad + std::sin(a) * rad };
-	}
-	s -= arc;
-	if (s < straightV)
-		return Point2F{ r.x2(), r.y + rad + s };
-	s -= straightV;
-	if (s < arc) {
-		const float a = (s / arc) * kQuarterPi;
-		return Point2F{ r.x2() - rad + std::cos(a) * rad, r.y2() - rad + std::sin(a) * rad };
-	}
-	s -= arc;
-	if (s < straightH)
-		return Point2F{ r.x2() - rad - s, r.y2() };
-	s -= straightH;
-	if (s < arc) {
-		const float a = kQuarterPi + (s / arc) * kQuarterPi;
-		return Point2F{ r.x + rad + std::cos(a) * rad, r.y2() - rad + std::sin(a) * rad };
-	}
-	s -= arc;
-	if (s < straightV)
-		return Point2F{ r.x, r.y2() - rad - s };
-	s -= straightV;
-	const float a = 3.14159265f + (s / arc) * kQuarterPi;
-	return Point2F{ r.x + rad + std::cos(a) * rad, r.y + rad + std::sin(a) * rad };
+	if (s < w)
+		return Point2F{ r.x + s, r.y };
+	s -= w;
+	if (s < h)
+		return Point2F{ r.x + w, r.y + s };
+	s -= h;
+	if (s < w)
+		return Point2F{ r.x + w - s, r.y + h };
+	s -= w;
+	return Point2F{ r.x, r.y + h - s };
 }
 
-static uint32_t MixGlow(uint32_t glow, float k, float pulse) {
-	const float white = k * k * k;
-	const int gr = (glow >> 16) & 0xFF;
-	const int gg = (glow >> 8) & 0xFF;
-	const int gb = glow & 0xFF;
-	const int r = gr + (int)((255 - gr) * white);
-	const int g = gg + (int)((255 - gg) * white);
-	const int b = gb + (int)((255 - gb) * white);
-	int a = (int)(pulse * k * k * 255.0f);
-	if (a > 255)
-		a = 255;
-	return RGB(r, g, b, a);
-}
-
-// The pulsing comet ring around the selected card: spins one lap every 3.6 s,
-// brightness pulses on a 5 s cycle, hue steps every 5 s.
-static void DrawCometRing(UIContext &dc, const Bounds &r) {
+// Thin sweep around the selected card: one slow lap every 6 s over a faint
+// steady outline, single ice-blue accent, gentle breathing pulse.
+static void DrawCometRing(UIContext &dc, const Bounds &card) {
+	const Bounds r(card.x - 2.0f, card.y - 2.0f, card.w + 4.0f, card.h + 4.0f);
 	const float t = (float)time_now_d();
-	const float rad = std::min(14.0f, std::min(r.w, r.h) * 0.09f);
-	const float thick = std::max(2.0f, r.w * 0.014f);
-	const float phase = std::fmod(t, 5.0f) / 5.0f;
-	const float pulse = phase < 0.3f
-		? (0.4f + 0.6f * phase / 0.3f)
-		: (0.4f + 0.6f * (1.0f - (phase - 0.3f) / 0.7f));
-	const float head = std::fmod(t / 3.6f, 1.0f);
-	const uint32_t glow = GlowColor(t);
-	const float tail = 0.45f;
-	const int SEG = 96;
-	Point2F prev = RoundedRectPoint(r, rad, 0.0f);
+	const float thick = std::max(2.0f, card.w * 0.007f);
+	const float pulse = 0.74f + 0.26f * (0.5f + 0.5f * std::cos(t * 1.0472f));
+	const float head = std::fmod(t / 6.0f, 1.0f);
+	const float tail = 0.32f;
+	const int SEG = 72;
+	Point2F prev = RectPerimeterPoint(r, 0.0f);
 	for (int i = 1; i <= SEG; i++) {
 		const float u0 = (float)(i - 1) / (float)SEG;
-		const Point2F p = RoundedRectPoint(r, rad, (float)i / (float)SEG);
+		const Point2F p = RectPerimeterPoint(r, (float)i / (float)SEG);
 		float d = head - u0;
 		if (d < 0.0f)
 			d += 1.0f;
-		if (d <= tail) {
-			const float k = 1.0f - d / tail;
-			dc.Draw()->Line(dc.GetTheme().whiteImage, prev.x, prev.y, p.x, p.y, thick, MixGlow(glow, k, pulse));
-		}
+		float k = 0.0f;
+		if (d <= tail)
+			k = 1.0f - d / tail;
+		const float wht = k * 0.55f;
+		const int rr = (int)(201 + (255 - 201) * wht);
+		const int gg = (int)(221 + (255 - 221) * wht);
+		const int bb = (int)(240 + (255 - 240) * wht);
+		float af = pulse * (0.10f + 0.78f * k * k);
+		if (af > 1.0f)
+			af = 1.0f;
+		dc.Draw()->Line(dc.GetTheme().whiteImage, prev.x, prev.y, p.x, p.y, thick,
+			RGB(rr, gg, bb, (int)(af * 255.0f)));
 		prev = p;
 	}
 }
@@ -454,45 +380,46 @@ void BigPictureView::DrawCard(UIContext &dc, const Bounds &card, int i, bool sel
 		return;
 	auto info = g_gameInfoCache->GetInfo(dc.GetDrawContext(), *path,
 		GameInfoFlags::PARAM_SFO | GameInfoFlags::ICON | GameInfoFlags::PIC1);
-	uint32_t top = 0xFF305080;
-	uint32_t bottom = 0xFF102038;
-	GameCoverColors(path->ToString(), &top, &bottom);
 
-	dc.DrawRectDropShadow(card, 14.0f, selected ? 0.75f : 0.5f);
-	dc.Draw()->RectVGradient(card.x, card.y, card.x2(), card.y2(), top, bottom);
+	dc.DrawRectDropShadow(card, selected ? 14.0f : 8.0f, selected ? 0.7f : 0.4f);
+	if (selected)
+		dc.Draw()->RectVGradient(card.x, card.y, card.x2(), card.y2(), 0xFF232C3E, 0xFF0D131F);
+	else
+		dc.Draw()->RectVGradient(card.x, card.y, card.x2(), card.y2(), 0xA01A2231, 0x8C0B101A);
 
 	Draw::Texture *tex = nullptr;
 	if (info) {
-		if (info->Ready(GameInfoFlags::PIC1) && info->pic1.texture)
-			tex = info->pic1.texture;
-		else if (info->Ready(GameInfoFlags::ICON) && info->icon.texture)
+		if (info->Ready(GameInfoFlags::ICON) && info->icon.texture)
 			tex = info->icon.texture;
+		else if (info->Ready(GameInfoFlags::PIC1) && info->pic1.texture)
+			tex = info->pic1.texture;
 	}
 	if (tex) {
-		// PSP art is roughly 1.8:1; letterbox it into the card.
-		float aw = card.w;
+		// ICON0 is 144x80 (1.8:1); letterbox it into the card with a margin.
+		float aw = card.w * 0.92f;
 		float ah = aw / 1.8f;
-		if (ah > card.h * 0.7f) {
-			ah = card.h * 0.7f;
+		if (ah > card.h * 0.66f) {
+			ah = card.h * 0.66f;
 			aw = ah * 1.8f;
 		}
 		const float ix = card.centerX() - aw * 0.5f;
 		const float iy = card.centerY() - ah * 0.5f;
 		dc.Flush();
 		dc.GetDrawContext()->BindTexture(0, tex);
-		dc.Draw()->DrawTexRect(ix, iy, ix + aw, iy + ah, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF);
+		dc.Draw()->DrawTexRect(ix, iy, ix + aw, iy + ah, 0.0f, 0.0f, 1.0f, 1.0f,
+			selected ? 0xFFFFFFFF : 0x9EFFFFFF);
 		dc.Flush();
 		dc.RebindTexture();
 	}
 
 	const float tagH = std::max(18.0f, card.h * 0.14f);
-	dc.Draw()->Rect(card.x, card.y2() - tagH, card.w, tagH, 0xB0000000);
+	dc.Draw()->Rect(card.x, card.y2() - tagH, card.w, tagH, selected ? 0xB0000000 : 0x74000000);
 	const std::string title = info ? info->GetTitle() : std::string();
 	dc.SetFontStyle(*UI::GetTextStyle(dc, UI::TextSize::Tiny));
 	dc.DrawTextRectSqueeze(title, Bounds(card.x + 3.0f, card.y2() - tagH, card.w - 6.0f, tagH),
-		0xFFFFFFFF, ALIGN_CENTER);
+		selected ? 0xFFFFFFFF : 0xA0D8DEE8, ALIGN_CENTER);
 	dc.Draw()->RectOutline(card.x, card.y, card.w, card.h,
-		selected ? 0xFF8CB4FF : 0x40FFFFFF);
+		selected ? 0x50C9DDF0 : 0x26FFFFFF);
 }
 
 void BigPictureView::DrawMenu(UIContext &dc) {
@@ -743,17 +670,7 @@ void BigPictureScreen::CreateViews() {
 
 void BigPictureScreen::DrawBackground(UIContext &ui) {
 	const Bounds &b = ui.GetBounds();
-	if (sel_ < (int)games_.size()) {
-		auto info = g_gameInfoCache->GetInfo(ui.GetDrawContext(), games_[sel_], GameInfoFlags::PIC1);
-		if (info && info->Ready(GameInfoFlags::PIC1) && info->pic1.texture) {
-			ui.Flush();
-			ui.GetDrawContext()->BindTexture(0, info->pic1.texture);
-			ui.Draw()->DrawTexRect(b.x, b.y, b.x2(), b.y2(), 0.0f, 0.0f, 1.0f, 1.0f, 0x50FFFFFF);
-			ui.Flush();
-			ui.RebindTexture();
-		}
-	}
-	ui.Draw()->Rect(b.x, b.y, b.w, b.h, 0xB30A0F1A);
+	ui.Draw()->RectVGradient(b.x, b.y, b.x2(), b.y2(), 0xFF090D14, 0xFF141C2A);
 }
 
 void BigPictureScreen::update() {
